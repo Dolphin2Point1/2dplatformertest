@@ -31,14 +31,17 @@ pub fn asSystem(name: []const u8, function: anytype) System {
     return .{.name = name, .function = function, .function_type = T};
 }
 
-pub fn World(comptime entity_index_type: type, comptime entity_count: entity_index_type, comptime components: []const Component, comptime systems: []const System) type {
+pub fn World(comptime entity_index_type: type, comptime entity_count: entity_index_type, comptime components: []const Component, comptime systems: []const System, comptime tickdata: type) type {
     const field_count = components.len + 1;
     var field_names: [field_count][]const u8 = undefined;
     var field_types: [field_count]type = undefined;
     var field_attrs: [field_count]Type.StructField.Attributes = undefined;
     for (components, 0..) |component, index| {
-        if(isHashmap(@TypeOf(component))) {
+        if(isHashmap(component.component_type)) {
             @compileError("Component of type " ++ component.component_type ++ " is a Hashmap, which is not allowed!");
+        }
+        if(component.component_type == tickdata) {
+            @compileError("Expected tickdata to not be a component, but " ++ @typeName(tickdata) ++ " is both a component and tickdata.");
         }
         switch(@typeInfo(component.component_type)) {
             .@"struct" => {},
@@ -108,6 +111,9 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
         }
 
         pub fn attach_component(world: *WorldType, entity: entity_index_type, component: anytype) !void {
+            if(!isComponent(component)) {
+                @compileError("Type " ++ @typeName(component) ++ " is not a registered component!");
+            }
             const ct = @TypeOf(component);
             const wcfn = "c_" ++ @typeName(ct);
             switch(@FieldType(WorldType, wcfn)) {
@@ -118,7 +124,29 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
             }
         }
 
-        pub fn tick(world: *WorldType, alloc: std.mem.Allocator) !void {
+        pub fn attach_components(world: *WorldType, entity: entity_index_type, components_to_add: anytype) !void {
+            if(@typeInfo(@TypeOf(components_to_add)) != .@"struct") {
+                @compileError("attach_components expected a struct of components, got " ++ @typeName(components_to_add));
+            }
+            const fields = @typeInfo(@TypeOf(components_to_add)).@"struct".fields;
+            inline for(fields) |field| {
+                if(!comptime isComponent(field.type)) {
+                    @compileError("attach_components expected component types only in struct, found non-component type " ++ @typeName(field.type) ++ " in struct");
+                }
+                if(comptime getComponentStorageType(field.type) == .SINGLETON) {
+                    @compileError("attach_components found singleton struct " ++ @typeName(field.type) ++ ", which cannot be attached to an entity");
+                }
+
+                const wcfn = "c_" ++ @typeName(field.type);
+                switch(comptime @FieldType(WorldType, wcfn)) {
+                    [entity_count]?field.type => @field(world, wcfn)[entity] = @field(components_to_add, field.name),
+                    std.AutoHashMap(entity_index_type, field.type) => try @field(world, wcfn).put(entity, @field(components_to_add, field.name)),
+                    else => @compileError("FIXME: Unhandled ecs error while attatching component " ++ @typeName(field.type) ++ "!")
+                }
+            }
+        }
+
+        pub fn tick(world: *WorldType, alloc: std.mem.Allocator, data: tickdata) !void {
             inline for(systems) |system| {
                 const function_pointer: *const (system.function_type) = comptime @ptrCast(system.function);
                 const function = comptime function_pointer.*;
@@ -134,8 +162,10 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                         @compileError("Parameter in system function " ++ function ++ " is a generic or unknown type!");
                     }
                     const t = param.type.?;
-
-                    if(comptime isHashmap(t)) {
+                    
+                    if(t == tickdata) {
+                        args[index] = data;
+                    } else if(comptime isHashmap(t)) {
                         // hashmap query...
                         // guaranteed by isHashmap()
                         const map_types = getPutTypes(t) orelse unreachable;
@@ -146,7 +176,10 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                         args[index] = try extractHashMap(map_types.@"1", function_name, world, arena.allocator());
                     } else {
                         // treat this like a singleton...
-                        if(!isSingletonComponentOrPointer(t, components)) {
+                        if(comptime !isComponentOrPointer(t)) {
+                            @compileError("Error in evaluating types for system function " ++ function_name ++ ": " ++ @typeName(t) ++ " is not a component, and cannot be accessed as a singleton component.");
+                        }
+                        if(comptime getComponentStorageType(t) != .SINGLETON) {
                             @compileError("Error in evaluating types for system function " ++ function_name ++ ": Non-singleton " ++ @typeName(t) ++ " can only be accessed via hashmap query!");
                         }
                         comptime var pointer = false;
@@ -173,8 +206,10 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
 
         pub fn extractHashMap(comptime V: type, comptime function_name: []const u8, world: *WorldType, alloc: std.mem.Allocator) !std.AutoHashMap(entity_index_type, V) {
             var map: std.AutoHashMap(entity_index_type, V) = .init(alloc);
-
-            if(comptime isNonSingletonComponentOrPointer(V, components)) {
+            if(comptime isComponentOrPointer(V)) {
+                if(comptime getComponentStorageType(V) == .SINGLETON) {
+                    @compileError("Error evaluating types for system function: " ++ function_name ++ "Singleton " ++ @typeName(V) ++ " cannot be accessed through a hashmap query!");
+                }
                 ent: for(0..entity_count) |entity| {
                     try map.put(@intCast(entity), extractSingleType(V, world, @intCast(entity)) orelse continue :ent);
                 }
@@ -182,11 +217,14 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 const members = switch(@typeInfo(V)) {
                     .pointer => |P| @typeInfo(P.child).@"struct".fields,
                     .@"struct" => |S| S.fields,
-                    else => unreachable
+                    else => @compileError("This should be unreachable, fix this!")
                 };
                 inline for(members) |member| {
-                    if(comptime !isNonSingletonComponentOrPointer(member.type, components)) {
-                        @compileError("Error in evaluating types for system function " ++ function_name ++ ": Query map non-singleton component type " ++ @typeName(V) ++ " contains non-singleton component member " ++ @typeName(member.type) ++ " when all members must be singleton components!");
+                    if(comptime !isComponentOrPointer(member.type)) {
+                        @compileError("Error in evaluating types for system function " ++ function_name ++ ": Expected query map to only contain non-singleton components, got non-component " ++ @typeName(member.type));
+                    }
+                    if(comptime getComponentStorageType(member.type) == .SINGLETON) {
+                        @compileError("Error evaluating types for system function: " ++ function_name ++ "Singleton " ++ @typeName(member.type) ++ " cannot be accessed through a hashmap query!");
                     }
                 }
 
@@ -230,7 +268,7 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
             }
         }
 
-        pub fn accessDenseComponents(self: *WorldType, comptime T: type) *const [entity_count]T {
+        pub fn accessDenseComponents(self: *WorldType, comptime T: type) *const [entity_count]?T {
             if(comptime !isComponent(T)) {
                 @compileError(@typeName(T) ++ " is not a component of this world!");
             }
@@ -267,8 +305,13 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
         }
 
         pub fn getComponentStorageType(comptime T: type) StorageType {
+            const base_type = switch(@typeInfo(T)) {
+                .pointer => |P| P.child,
+                .@"struct" => T,
+                else => @compileError("Getting component from type " ++ @typeName(T) ++ " is currently not supported!")
+            };
             inline for(components) |component| {
-                if(T == component.component_type) {
+                if(base_type == component.component_type) {
                     return component.storage_type;
                 }
             }
@@ -283,31 +326,18 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
             }
             return false;
         }
-    };
-}
 
-// TODO remove these and just use isComponent and getComponentStorageType instead...
-fn isNonSingletonComponentOrPointer(comptime T: type, comptime components: []const Component) bool {
-    return switch(@typeInfo(T)) {
-        .pointer => |P| switch(P.size) {
-            .one => comptime isNonSingletonComponent(P.child, components),
-            .many, .slice, .c => false,
-        },
-        .@"struct" => isNonSingletonComponent(T, components),
-        else => false
-    };
-}
-
-fn isNonSingletonComponent(comptime T: type, comptime components: []const Component) bool {
-    for(components) |component| {
-        if(component.component_type == T) {
-            if(component.storage_type == .SINGLETON) {
-                return false;
-            }
-            return true;
+        pub fn isComponentOrPointer(comptime T: type) bool {
+            return switch(@typeInfo(T)) {
+                .pointer => |P| switch(P.size) {
+                    .one => comptime isComponent(P.child),
+                    .many, .slice, .c => false,
+                },
+                .@"struct" => isComponent(T),
+                else => false
+            };
         }
-    }
-    return false;
+    };
 }
 
 fn isSingletonComponentOrPointer(comptime T: type, comptime components: []const Component) bool {

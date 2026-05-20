@@ -9,27 +9,28 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast
     });
 
+    const glfw_zig = b.dependency("glfw_zig", .{});
+    const zglfw = b.dependency("zglfw", .{});
+    const zigimg = b.dependency("zigimg", .{});
+
     const exe = b.addExecutable(.{
         .name = "_2dplatformertest",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
+            .imports = &.{.{.name = "gl", .module = gl4}, 
+                .{.name = "zglfw", .module = zglfw.module("root")}, 
+                .{.name = "zigimg", .module = zigimg.module("zigimg")}},
         }),
         .use_llvm = true
     });
     
     try addFiles(b, exe, "assets");
 
-    //exe.root_module.addAnonymousImport(, options: CreateOptions)
-    exe.root_module.addEmbedPath(b.path("assets/"));
-
     exe.root_module.addImport("gl", gl4);
-    const zglfw = b.dependency("zglfw", .{});
     exe.root_module.addImport("zglfw", zglfw.module("root"));
-    const zigimg = b.dependency("zigimg", .{});
     exe.root_module.addImport("zigimg", zigimg.module("zigimg"));
-    const glfw_zig = b.dependency("glfw_zig", .{});
     exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
     //exe.root_module.linkSystemLibrary("glfw", .{});
 

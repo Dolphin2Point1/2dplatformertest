@@ -4,14 +4,19 @@ const zigimg = @import("zigimg");
 
 const glutil = @import("glutil.zig");
 const mth = @import("math.zig");
-const assets = @import("assets.zig");
+const assets = @import("../assets.zig");
 
 const log = std.log.scoped(.SpriteRenderer);
+
+pub const SpriteShader = struct {
+    pub const vert = .{"sprite.vert", @embedFile("assets/sprite.vert")};
+    pub const frag = .{"sprite.frag", @embedFile("assets/sprite.frag")};
+};
 
 pub const RendererSprite = struct { pos: mth.f32x2 = undefined, size: mth.f32x2 = undefined, texture: i32 = -1 };
 pub const max_sprites = 256;
 
-pub fn SpriteRenderer(comptime extract: fn (*[max_sprites]RendererSprite) void) type {
+pub fn SpriteRenderer(comptime T: type, comptime E: type, comptime extract: fn (T, *[max_sprites]RendererSprite) E!void) type {
     return struct {
         ssbo: gl.GLuint = undefined,
         vbo: gl.GLuint = undefined,
@@ -80,9 +85,9 @@ pub fn SpriteRenderer(comptime extract: fn (*[max_sprites]RendererSprite) void) 
             errdefer gl.deleteBuffers(1, r.texture_buffer);
             gl.namedBufferStorage(r.texture_buffer, @intCast(assets.textures.len * @sizeOf(gl.GLuint64)), r.texture_handles.items.ptr, gl.DYNAMIC_STORAGE_BIT);
 
-            const vs = try glutil.compileShader(gl.VERTEX_SHADER, assets.SpriteShader.vert.@"1", assets.SpriteShader.vert.@"0", alloc);
+            const vs = try glutil.compileShader(gl.VERTEX_SHADER, SpriteShader.vert.@"1", SpriteShader.vert.@"0", alloc);
             defer gl.deleteShader(vs);
-            const fs = try glutil.compileShader(gl.FRAGMENT_SHADER, assets.SpriteShader.frag.@"1", assets.SpriteShader.frag.@"0", alloc);
+            const fs = try glutil.compileShader(gl.FRAGMENT_SHADER, SpriteShader.frag.@"1", SpriteShader.frag.@"0", alloc);
             defer gl.deleteShader(fs);
             r.shader_program = gl.createProgram();
             errdefer gl.deleteProgram(r.shader_program);
@@ -98,8 +103,8 @@ pub fn SpriteRenderer(comptime extract: fn (*[max_sprites]RendererSprite) void) 
             return r;
         }
 
-        pub fn render(self: *Self, width: u32, height: u32) void {
-            extract(&self.object_data);
+        pub fn render(self: *Self, data: T, width: u32, height: u32) !void {
+            try extract(data, &self.object_data);
 
             gl.namedBufferData(self.ssbo, @sizeOf(@TypeOf(self.object_data)), &self.object_data, gl.DYNAMIC_DRAW);
 

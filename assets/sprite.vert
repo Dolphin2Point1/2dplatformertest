@@ -21,7 +21,7 @@ out vec2 screenPos;
 void main() {
   uv = vertex_position;
   //gl_Position = vec4(vertex_position, 0.0, 1.0);
-  gl_Position = vec4((vertex_position - vec2(0.5) + object_infos[gl_InstanceID].pos) * vec2(resolution.x / resolution.y, 1) / verticalScale * object_infos[gl_InstanceID].size, 0.5, 1.0);
+  gl_Position = vec4((vertex_position - vec2(0.5) + object_infos[gl_InstanceID].pos) / vec2(float(resolution.x) / float(resolution.y), 1) / verticalScale * object_infos[gl_InstanceID].size, 0.5, 1.0);
   tex = object_infos[gl_InstanceID].tex;
   screenPos = gl_Position.xy / 2.0 + vec2(0.5) * resolution;
   if(object_infos[gl_InstanceID].tex == -1) {
