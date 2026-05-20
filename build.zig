@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const gl4 = b.addModule("gl", .{
@@ -18,12 +18,17 @@ pub fn build(b: *std.Build) void {
         }),
         .use_llvm = true
     });
+    
+    try addFiles(b, exe, "assets");
+
+    //exe.root_module.addAnonymousImport(, options: CreateOptions)
+    exe.root_module.addEmbedPath(b.path("assets/"));
 
     exe.root_module.addImport("gl", gl4);
-    const zmath = b.dependency("zmath", .{});
-    exe.root_module.addImport("zmath", zmath.module("root"));
     const zglfw = b.dependency("zglfw", .{});
-    exe.root_module.addImport("zglfw.zig", zglfw.module("root"));
+    exe.root_module.addImport("zglfw", zglfw.module("root"));
+    const zigimg = b.dependency("zigimg", .{});
+    exe.root_module.addImport("zigimg", zigimg.module("zigimg"));
     const glfw_zig = b.dependency("glfw_zig", .{});
     exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
     //exe.root_module.linkSystemLibrary("glfw", .{});
@@ -45,4 +50,25 @@ pub fn build(b: *std.Build) void {
     const run_exe_tests = b.addRunArtifact(exe_tests);
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_exe_tests.step);
+}
+
+fn addFiles(b: *std.Build, exe: *std.Build.Step.Compile, folder: []const u8) !void {
+    var dir = try std.Io.Dir.cwd().openDir(b.graph.io, folder, .{ .iterate = true });
+    var it = dir.iterate();
+
+    while (try it.next(b.graph.io)) |file| {
+        const name = try std.fmt.allocPrint(b.allocator, "{s}/{s}", .{folder, file.name});
+        switch (file.kind) {
+            .file => {
+                exe.root_module.addAnonymousImport(name, .{
+                    .root_source_file = b.path(name),
+                });
+            },
+            .directory => {
+                try addFiles(b, exe, name);
+            },
+            else => {},
+        }
+    }
+
 }

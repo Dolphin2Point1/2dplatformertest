@@ -32,21 +32,17 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .glfw_zig = .{
-            .url = "git+https://github.com/tiawl/glfw.zig/#2eb8c8d31ce25592ac741f33c9cd9d5cbda4bb7f",
-            .hash = "glfw_zig-1.0.0-NrvYo0HRGQA-zQpm9A79DqWm9aAck-_geH2XtqiTdpWs",
-        },
         .zglfw = .{
             .url = "git+https://github.com/zig-gamedev/zglfw#51003c105d23db378bb59ce415a387b22f1b0892",
             .hash = "zglfw-0.10.0-dev-zgVDNIy4IQDJNRy4jrP1As-SZxfJpuWhU1iJ-wBab_VD",
         },
-        .zmath = .{
-            .url = "git+https://github.com/zig-gamedev/zmath#9e42b04a24c970a297b365f3d3022f92dbf3219d",
-            .hash = "zmath-0.11.0-dev-wjwivTwtAwDOjG2_KGP-HLtHrONfsFfHttalmxFAGVAK",
-        },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg#bebd3609158eb8e98db3c4e0eb609cc1252cc535",
             .hash = "zigimg-0.1.0-8_eo2gGbFwCvhBtJ9aO9Gvm2l3WdQF44iu472X5EWCMj",
+        },
+        .glfw_zig = .{
+            .url = "git+https://github.com/tiawl/glfw.zig#2eb8c8d31ce25592ac741f33c9cd9d5cbda4bb7f",
+            .hash = "glfw_zig-1.0.0-NrvYo0HRGQA-zQpm9A79DqWm9aAck-_geH2XtqiTdpWs",
         },
     },
     .paths = .{
