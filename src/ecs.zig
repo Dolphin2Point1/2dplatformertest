@@ -1,5 +1,5 @@
 // this file probably constitutes several warcrimes against zig
-// sorry andrewk it had to be done
+// sorry andrew kelley it had to be done
 const std = @import("std");
 const Io = std.Io;
 const testing = std.testing;
@@ -16,11 +16,20 @@ pub const Component = struct {
     storage_type: StorageType
 };
 
+/// Struct holding data for a system. Name and function_type are only used at compile time.
 pub const System = struct {
     name: []const u8,
     function: *const anyopaque,
     function_type: type
 };
+
+pub fn asSystem(name: []const u8, function: anytype) System {
+    const T = @TypeOf(function);
+    if(@typeInfo(T) != .@"fn") {
+        @compileError("asSystem only accepts functions for systems...");
+    }
+    return .{.name = name, .function = function, .function_type = T};
+}
 
 pub fn World(comptime entity_index_type: type, comptime entity_count: entity_index_type, comptime components: []const Component, comptime systems: []const System) type {
     const field_count = components.len + 1;
@@ -116,6 +125,8 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 const function_name = comptime system.name;
                 const ArgsType = std.meta.ArgsTuple(system.function_type);
                 var args: ArgsType = undefined;
+                var arena: std.heap.ArenaAllocator = .init(alloc);
+                defer arena.deinit();
                 // extract required data
                 const params = @typeInfo(system.function_type).@"fn".params;
                 inline for (params, 0..) |param, index| {
@@ -132,7 +143,7 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                             @compileError("Error in evaulating types for system function" ++ function_name ++ "Hashmaps must have an entity_index_type key (" ++ @typeName(entity_index_type) ++ ")!");
                         }
 
-                        args[index] = try extractHashMap(map_types.@"1", function_name, world, alloc);
+                        args[index] = try extractHashMap(map_types.@"1", function_name, world, arena.allocator());
                     } else {
                         // treat this like a singleton...
                         if(!isSingletonComponentOrPointer(t, components)) {
@@ -160,7 +171,7 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
             }
         }
 
-        fn extractHashMap(comptime V: type, comptime function_name: []const u8, world: *WorldType, alloc: std.mem.Allocator) !std.AutoHashMap(entity_index_type, V) {
+        pub fn extractHashMap(comptime V: type, comptime function_name: []const u8, world: *WorldType, alloc: std.mem.Allocator) !std.AutoHashMap(entity_index_type, V) {
             var map: std.AutoHashMap(entity_index_type, V) = .init(alloc);
 
             if(comptime isNonSingletonComponentOrPointer(V, components)) {
@@ -218,9 +229,64 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 return obj.*;
             }
         }
+
+        pub fn accessDenseComponents(self: *WorldType, comptime T: type) *const [entity_count]T {
+            if(comptime !isComponent(T)) {
+                @compileError(@typeName(T) ++ " is not a component of this world!");
+            }
+
+            if(comptime getComponentStorageType(T) != .DENSE) {
+                @compileError(@typeName(T) ++ " is not stored as a dense component!");
+            }
+
+            return &@field(self, "c_" ++ @typeName(T));
+        }
+
+        pub fn accessSparseComponents(self: *WorldType, comptime T: type) *const std.HashMap(entity_index_type, T) {
+            if(comptime !isComponent(T)) {
+                @compileError(@typeName(T) ++ " is not a component of this world!");
+            }
+
+            if(comptime getComponentStorageType(T) != .DENSE) {
+                @compileError(@typeName(T) ++ " is not stored as a sparse component!");
+            }
+
+            return &@field(self, "c_" ++ @typeName(T));
+        }
+
+        pub fn accessSingleton(self: *WorldType, comptime T: type) *T {
+            if(comptime !isComponent(T)) {
+                @compileError(@typeName(T) ++ " is not a component of this world!");
+            }
+
+            if(comptime getComponentStorageType(T) != .DENSE) {
+                @compileError(@typeName(T) ++ " is not stored as a singleton!");
+            }
+
+            return &@field(self, "c_" ++ @typeName(T));
+        }
+
+        pub fn getComponentStorageType(comptime T: type) StorageType {
+            inline for(components) |component| {
+                if(T == component.component_type) {
+                    return component.storage_type;
+                }
+            }
+            @compileError(@typeName(T) ++ " is not a component of this world!");
+        }
+
+        pub fn isComponent(comptime T: type) bool {
+            inline for(components) |component| {
+                if(T == component.component_type) {
+                    return true;
+                }
+            }
+            return false;
+        }
     };
 }
 
+// TODO remove these and just use isComponent and getComponentStorageType instead...
 fn isNonSingletonComponentOrPointer(comptime T: type, comptime components: []const Component) bool {
     return switch(@typeInfo(T)) {
         .pointer => |P| switch(P.size) {
@@ -278,8 +344,9 @@ fn getPutTypes(comptime T: type) ?struct {type, type} {
     }
 
     return .{ params[1].type orelse return null, params[2].type orelse return null };
-} As far as who was right and who was wrong, it's hard to say. Using an open source launcher to push a political agenda is not great, so I tend to go with Lenny, but on the other hand, he really handled the whole thing very terribly. Since the modded community slants heavily left, you can expect a lot of players will never even consider PolyMC again. 
+}
 
+// TODO make this use proper duck typing so that other hashmaps can be used (and add a declaration to disable detection)
 fn isHashmap(comptime T: type) bool {
     const temp = comptime getPutTypes(T);
     const putTypes = temp orelse return false;
@@ -320,7 +387,7 @@ fn lose_health(health: std.AutoHashMap(u8, *Health)) void {
 
 test "System test" {
     const WorldData = World(u8, 16, &[_]Component{.{ .component_type = Health, .storage_type = .DENSE}}, 
-        &[_]System{.{.name = "lose_health", .function = &lose_health, .function_type = @TypeOf(lose_health)}});
+        &[_]System{asSystem("lose_health", lose_health)});
     var alloc: std.heap.DebugAllocator(.{}) = .init;
     var world: WorldData.WorldType = WorldData.init(alloc.allocator());
     defer WorldData.deinit(&world);
@@ -340,8 +407,7 @@ fn lose_health_2(health: std.AutoHashMap(u8, struct {*Health, Other})) void {
 }
 
 test "Multisystem test" {
-    const WorldData = World(u8, 16, &[_]Component{.{ .component_type = Health, .storage_type = .DENSE }, .{ .component_type = Other, .storage_type = .DENSE }}, 
-        &[_]System{.{.name = "lose_health_2", .function = &lose_health_2, .function_type = @TypeOf(lose_health_2)}});
+    const WorldData = World(u8, 16, &[_]Component{.{ .component_type = Health, .storage_type = .DENSE }, .{ .component_type = Other, .storage_type = .DENSE }}, &[_]System{asSystem("lose_health_2", lose_health_2)});
     var alloc: std.heap.DebugAllocator(.{}) = .init;
     var world: WorldData.WorldType = WorldData.init(alloc.allocator());
     defer WorldData.deinit(&world);
