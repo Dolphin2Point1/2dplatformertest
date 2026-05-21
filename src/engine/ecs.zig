@@ -156,7 +156,8 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 var arena: std.heap.ArenaAllocator = .init(alloc);
                 defer arena.deinit();
                 // extract required data
-                const params = @typeInfo(system.function_type).@"fn".params;
+                const type_info = @typeInfo(system.function_type).@"fn";
+                const params = type_info.params;
                 inline for (params, 0..) |param, index| {
                     if(param.type == null) {
                         @compileError("Parameter in system function " ++ function ++ " is a generic or unknown type!");
@@ -200,7 +201,17 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                         }
                     }
                 }
-                @call(.auto, function, args);
+
+                const return_type = type_info.return_type.?;
+                switch(@typeInfo(return_type)) {
+                    .void => @call(.auto, function, args),
+                    .error_union => |E| if(E.payload == void) {
+                        try @call(.auto, function, args);
+                    } else {
+                        @compileError("Error while setting up function call for system " ++ function_name ++ ": Return type must either be void or !void");
+                    },
+                    else => @compileError("Error while setting up function call for system " ++ function_name ++ ": Return type must either be void or !void")
+                }
             }
         }
 
@@ -285,7 +296,7 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 @compileError(@typeName(T) ++ " is not a component of this world!");
             }
 
-            if(comptime getComponentStorageType(T) != .DENSE) {
+            if(comptime getComponentStorageType(T) != .SPARSE) {
                 @compileError(@typeName(T) ++ " is not stored as a sparse component!");
             }
 
@@ -297,7 +308,7 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
                 @compileError(@typeName(T) ++ " is not a component of this world!");
             }
 
-            if(comptime getComponentStorageType(T) != .DENSE) {
+            if(comptime getComponentStorageType(T) != .SINGLETON) {
                 @compileError(@typeName(T) ++ " is not stored as a singleton!");
             }
 

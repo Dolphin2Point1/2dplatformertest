@@ -4,10 +4,10 @@ const gl = @import("gl");
 
 const sprite_render = @import("engine/sprite_render.zig");
 const glutil = @import("engine/glutil.zig");
-const world = @import("world.zig");
+const world = @import("world/world.zig");
 
 fn extract(data: struct { *world.World, std.mem.Allocator }, sprites: *[sprite_render.max_sprites]sprite_render.RendererSprite) !void {
-    // TODO add and sort by depth
+    // TODO sort by depth
     var map = try world.WorldFn.extractHashMap(struct { world.Position, world.Sprite }, @src().fn_name, data.@"0", data.@"1");
     defer map.deinit();
     var iter = map.iterator();
@@ -50,10 +50,11 @@ pub fn main(init: std.process.Init) !void {
         world.PositionDerivatives {
             .vel = .{1, 0}
         },
-        world.GravityAffected {},
         world.Sprite {
             .sprite = 0
-        }
+        },
+        world.Player {},
+        world.GravityAffected {}
     });
     try world.WorldFn.attach_components(&w, world.WorldFn.create_entity(&w), .{
         world.Position {
@@ -79,6 +80,11 @@ pub fn main(init: std.process.Init) !void {
         const elapsed = prev_time.durationTo(curr_time);
         prev_time = curr_time;
         const dt: f32 = @as(f32, @floatFromInt(elapsed.toMilliseconds())) / 1e3;
+
+        const controller = world.WorldFn.accessSingleton(&w, world.Controller);
+        controller.left = glfw.getKey(window, glfw.Key.left) == glfw.Action.press;
+        controller.right = glfw.getKey(window, glfw.Key.right) == glfw.Action.press;
+        controller.jump = glfw.getKey(window, glfw.Key.z) == glfw.Action.press;
 
         var width: c_int = undefined;
         var height: c_int = undefined;
