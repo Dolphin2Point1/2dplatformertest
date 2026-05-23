@@ -111,10 +111,10 @@ pub fn World(comptime entity_index_type: type, comptime entity_count: entity_ind
         }
 
         pub fn attach_component(world: *WorldType, entity: entity_index_type, component: anytype) !void {
-            if(!isComponent(component)) {
-                @compileError("Type " ++ @typeName(component) ++ " is not a registered component!");
-            }
             const ct = @TypeOf(component);
+            if(comptime !isComponent(ct)) {
+                @compileError("Type " ++ @typeName(ct) ++ " is not a registered component!");
+            }
             const wcfn = "c_" ++ @typeName(ct);
             switch(@FieldType(WorldType, wcfn)) {
                 [entity_count]?ct => @field(world, wcfn)[entity] = component,

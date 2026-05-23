@@ -13,7 +13,9 @@ pub fn build(b: *std.Build) !void {
     const zglfw = b.dependency("zglfw", .{});
     const zigimg = b.dependency("zigimg", .{});
 
-    const exe = b.addExecutable(.{
+    
+
+    const exe_options: std.Build.ExecutableOptions = .{
         .name = "_2dplatformertest",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
@@ -24,19 +26,32 @@ pub fn build(b: *std.Build) !void {
                 .{.name = "zigimg", .module = zigimg.module("zigimg")}},
         }),
         .use_llvm = true
-    });
-    
-    try addFiles(b, exe, "assets");
+    };
+    const exe = b.addExecutable(exe_options);
+    const exe_check = b.addExecutable(exe_options);
 
-    exe.root_module.addImport("gl", gl4);
-    exe.root_module.addImport("zglfw", zglfw.module("root"));
-    exe.root_module.addImport("zigimg", zigimg.module("zigimg"));
-    exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
+    try addFiles(b, exe, "assets");
+    try addFiles(b, exe_check, "assets");
+    
+    if(target.result.os.tag == .macos) {
+        exe.root_module.addLibraryPath(b.path("lib/MacOSX26.1.sdk/usr/lib/"));
+        exe.root_module.addFrameworkPath(b.path("lib/MacOSX26.1.sdk/System/Library/Frameworks/"));
+        exe.root_module.addObjectFile(b.path("lib/libglfw3.a"));
+        exe.root_module.linkFramework("Cocoa", .{.needed = true});
+        exe.root_module.linkFramework("CoreFoundation", .{.needed = true});
+        exe.root_module.linkFramework("IOKit", .{.needed = true});
+    } else {
+        exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
+    }
+
     //exe.root_module.linkSystemLibrary("glfw", .{});
 
     b.installArtifact(exe);
     
-    const run_step = b.step("run", "Run the app");
+    const check_step = b.step("check", "Check if the game compiles");
+    check_step.dependOn(&exe_check.step);
+
+    const run_step = b.step("run", "Run the game");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
