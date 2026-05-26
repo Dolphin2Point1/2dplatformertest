@@ -2,6 +2,7 @@ const std = @import("std");
 const glfw = @import("zglfw");
 const gl = @import("gl");
 
+const window_util = @import("engine/window.zig");
 const sprite_render = @import("engine/sprite_render.zig");
 const glutil = @import("engine/glutil.zig");
 const world = @import("world/world.zig");
@@ -25,22 +26,10 @@ fn extract(data: struct { *world.World, std.mem.Allocator }, sprites: *[sprite_r
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
 
-    try glfw.init();
-    defer glfw.terminate();
-
-    glfw.windowHint(glfw.WindowHint.context_version_major, 4);
-    glfw.windowHint(glfw.WindowHint.context_version_minor, 6);
-    glfw.windowHint(glfw.WindowHint.opengl_forward_compat, true);
-    glfw.windowHint(glfw.WindowHint.opengl_profile, glfw.OpenGLProfile.opengl_core_profile);
-    
-    glfw.windowHint(glfw.WindowHint.opengl_debug_context, true);
-    glfw.windowHint(glfw.WindowHint.scale_framebuffer, false);
-
-    const window = try glfw.createWindow(600, 600, "test", null, null);
-    defer glfw.destroyWindow(window);
-    glfw.makeContextCurrent(window);
+    const window = try window_util.create_window();
+    defer window_util.destroy_window(window);
    
-    try glutil.load();
+    try glutil.load(glfw);
     glutil.initDebugging();
 
     var w: world.World = world.WorldFn.init(gpa);
@@ -104,4 +93,8 @@ pub fn main(init: std.process.Init) !void {
         window.swapBuffers();
         glfw.pollEvents();
     }
+}
+
+test {
+    _ = @import("engine/collision2D.zig");
 }

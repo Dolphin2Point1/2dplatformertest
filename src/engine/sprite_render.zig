@@ -65,10 +65,10 @@ pub fn SpriteRenderer(comptime T: type, comptime E: type, comptime extract: fn (
             for (assets.textures) |image_bytes| {
                 log.info("Loading texture {s}...", .{image_bytes.@"0"});
 
-                var image = try zigimg.Image.fromMemory(alloc, image_bytes.@"1");
+        var image = try zigimg.Image.fromMemory(alloc, image_bytes.@"1");
                 defer image.deinit(alloc);
 
-                var texture: gl.GLuint = undefined;
+        var texture: gl.GLuint = undefined;
 
                 gl.createTextures(gl.TEXTURE_2D, 1, &texture);
                 gl.textureStorage2D(texture, 1, gl.RGBA8, @intCast(image.width), @intCast(image.height));

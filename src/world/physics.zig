@@ -44,7 +44,7 @@ fn reset_acceleration(query: std.AutoHashMap(world.entity_id_type, *PositionDeri
 fn apply_gravity(query: std.AutoHashMap(world.entity_id_type, struct {*PositionDerivatives, GravityAffected}), world_physics: WorldPhysicsConstants) void {
     var iter = query.valueIterator();
     while (iter.next()) |derivatives| {
-        derivatives.@"0".accel += world_physics.gravity;
+        derivatives.@"0".accel = math.add(derivatives.@"0".accel, world_physics.gravity);
     }
 }
 
@@ -54,9 +54,9 @@ fn update_positions(positions: std.AutoHashMap(world.entity_id_type, struct {*wo
         const position: *world.Position = item.@"0";
         const derivatives: *PositionDerivatives = item.@"1";
         position.last_pos = position.pos;
-        derivatives.vel += @as(math.f32x2, @splat(0.5 * data.dt)) * derivatives.accel;
-        position.pos    += @as(math.f32x2, @splat(data.dt))       * derivatives.vel;
-        derivatives.vel += @as(math.f32x2, @splat(0.5 * data.dt)) * derivatives.accel;
+        derivatives.vel = math.add(derivatives.vel, math.scale(derivatives.accel, 0.5 * data.dt));
+        position.pos    = math.add(position.pos,    math.scale(derivatives.vel, data.dt));
+        derivatives.vel = math.add(derivatives.vel, math.scale(derivatives.accel, 0.5 * data.dt));
     }
 }
 

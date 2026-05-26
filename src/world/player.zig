@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const math = @import("../engine/math.zig");
 const ecs = @import("../engine/ecs.zig");
 const physics = @import("physics.zig");
 const world = @import("world.zig");
@@ -32,7 +33,7 @@ fn player_control(positions: std.AutoHashMap(world.entity_id_type, struct {*phys
             input -= 1;
         }
 
-        item.@"0".accel += .{input * 50, 0};
+        item.@"0".accel = math.add(item.@"0".accel, .{input * 50, 0});
         if(controller.jump) {
             item.@"0".vel[1] = 20;
         }

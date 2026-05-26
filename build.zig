@@ -9,39 +9,64 @@ pub fn build(b: *std.Build) !void {
         .optimize = .ReleaseFast
     });
 
-    const glfw_zig = b.dependency("glfw_zig", .{});
+    const glfw_zig = b.dependency("glfw_zig", .{.target = target});
     const zglfw = b.dependency("zglfw", .{});
     const zigimg = b.dependency("zigimg", .{});
 
+    const physics_test_exe = b.addExecutable(.{
+        .name = "physics_test",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/engine/collisiontester.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{.name = "gl", .module = gl4}, 
+                .{.name = "zglfw", .module = zglfw.module("root")}, 
+                .{.name = "zigimg", .module = zigimg.module("zigimg")}
+            },
+        }),
+        .use_llvm = true
+    });
     
-
+    const physics_test_install = b.addInstallArtifact(physics_test_exe, .{});
+    const physics_test_step = b.step("physics_test", "Run the physics testing application.");
+    const physics_test_cmd = b.addRunArtifact(physics_test_exe);
+    physics_test_step.dependOn(&physics_test_cmd.step);
+    physics_test_cmd.step.dependOn(&physics_test_install.step);
+    
     const exe_options: std.Build.ExecutableOptions = .{
         .name = "_2dplatformertest",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,
             .optimize = optimize,
-            .imports = &.{.{.name = "gl", .module = gl4}, 
+            .imports = &.{
+                .{.name = "gl", .module = gl4}, 
                 .{.name = "zglfw", .module = zglfw.module("root")}, 
-                .{.name = "zigimg", .module = zigimg.module("zigimg")}},
+                .{.name = "zigimg", .module = zigimg.module("zigimg")}
+            },
         }),
         .use_llvm = true
     };
     const exe = b.addExecutable(exe_options);
     const exe_check = b.addExecutable(exe_options);
 
+    try addFiles(b, physics_test_exe, "assets");
     try addFiles(b, exe, "assets");
     try addFiles(b, exe_check, "assets");
     
     if(target.result.os.tag == .macos) {
-        exe.root_module.addLibraryPath(b.path("lib/MacOSX26.1.sdk/usr/lib/"));
-        exe.root_module.addFrameworkPath(b.path("lib/MacOSX26.1.sdk/System/Library/Frameworks/"));
+        // glfw_artifact.root_module.addLibraryPath(b.path("lib/MacOSX10.11.sdk/usr/lib"));
+        // glfw_artifact.root_module.addFrameworkPath(b.path("lib/MacOSX10.11.sdk/System/Library/Frameworks/"));
+        exe.root_module.addLibraryPath(b.path("lib/MacOSX11.3.sdk/usr/lib"));
+        exe.root_module.addFrameworkPath(b.path("lib/MacOSX11.3.sdk/System/Library/Frameworks"));
         exe.root_module.addObjectFile(b.path("lib/libglfw3.a"));
         exe.root_module.linkFramework("Cocoa", .{.needed = true});
         exe.root_module.linkFramework("CoreFoundation", .{.needed = true});
         exe.root_module.linkFramework("IOKit", .{.needed = true});
     } else {
         exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
+        physics_test_exe.root_module.linkLibrary(glfw_zig.artifact("glfw"));
     }
 
     //exe.root_module.linkSystemLibrary("glfw", .{});

@@ -1,7 +1,6 @@
 const std = @import("std");
 const gl = @import("gl");
 const builtin = @import("builtin");
-const glfw = @import("zglfw");
 
 const log = @import("logging.zig");
 
@@ -28,9 +27,15 @@ pub fn compileShader(shader_type: gl.GLenum, source: [*:0]const u8, name: []cons
     return shader;
 }
 
-pub fn load() !void {
-    try gl.load({}, getProcAddress);
-    try gl.GL_ARB_bindless_texture.load({}, getProcAddress);
+pub fn load(comptime glfw: type) !void {
+    const loader = struct {
+        fn getProcAddress(_: void, name: [:0]const u8) ?*const anyopaque {
+            return glfw.getProcAddress(name);
+        }
+    };
+
+    try gl.load({}, loader.getProcAddress);
+    try gl.GL_ARB_bindless_texture.load({}, loader.getProcAddress);
 }
 
 pub fn initDebugging() void {
@@ -48,10 +53,6 @@ pub fn initDebugging() void {
         gl.debugMessageCallback(gl_error, null);
         gl.debugMessageControl(gl.DONT_CARE, gl.DONT_CARE, gl.DONT_CARE, 0, null, gl.TRUE);
     }
-}
-
-fn getProcAddress(_: void, name: [:0]const u8) ?*const anyopaque {
-    return glfw.getProcAddress(name);
 }
 
 fn gl_error(source: gl.GLenum, err_type: gl.GLenum, id: gl.GLuint, severity: gl.GLenum, length: gl.GLsizei, message: [*:0]const gl.GLchar, userParam: ?*anyopaque) callconv(.c) void {

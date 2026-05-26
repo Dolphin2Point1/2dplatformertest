@@ -2,15 +2,12 @@
 
 in vec2 vertex_position;
 
-uniform float aspectRatio;
-uniform float verticalResolution;
-uniform vec2 size;
-uniform vec2 position;
+uniform float verticalScale;
+uniform ivec2 resolution;
 
 out vec2 uv;
 
 void main() {
-  uv = vertex_position;
-  gl_Position = vec4((vertex_position - vec2(0.5) + position) * vec2(1, aspectRatio) / verticalResolution * size, 0.0, 1.0);
+  gl_Position = vec4(vertex_position / vec2(float(resolution.x) / float(resolution.y), 1) / verticalScale * 2 - vec2(1.0, -1.0), 0.0, 1.0);
 }
 
