@@ -2,6 +2,7 @@ const std = @import("std");
 const glfw = @import("zglfw");
 const gl = @import("gl");
 
+const collision2d = @import("collision2D.zig");
 const window_util = @import("window.zig");
 const glutil = @import("glutil.zig");
 const math = @import("math.zig");
@@ -20,7 +21,19 @@ pub fn main(init: std.process.Init) !void {
     try glutil.load(glfw);
     glutil.initDebugging();
 
-    var points = boxPoints(@splat(0), @splat(16)) ++ boxPoints(.{0, 16}, @splat(16));
+    var finalPos: math.f32x2 = @splat(0);
+    var sweptPos: math.f32x2 = @splat(0);
+    const sweptBoxSize: math.f32x2 = @splat(16);
+
+    var points = boxPoints(sweptPos, sweptBoxSize) ++ boxPoints(finalPos, sweptBoxSize) ** 2 ++ boxPoints(@splat(88), @splat(64)) ++ .{sweptPos, sweptPos};
+    var state_dirty = false;
+    var sweptBox = boxCollider(sweptPos, sweptBoxSize);
+    var sweep: math.f32x2 = .{0, 16};
+    const staticBox = boxCollider(@splat(88), @splat(64));
+
+    var t: f32 = 1;
+    var normal = collision2d.swept_box_collision_normal(sweptBox, sweep, staticBox);
+
     var vbo: gl.GLuint = undefined;
     var vao: gl.GLuint = undefined;
 
@@ -49,9 +62,9 @@ pub fn main(init: std.process.Init) !void {
     gl.vertexArrayAttribFormat(vao, 0, 2, gl.FLOAT, gl.FALSE, 0);
     gl.vertexArrayAttribBinding(vao, 0, 0);
     
-    // const Clock = std.Io.Clock;
+    const Clock = std.Io.Clock;
 
-    // var prev_time = Clock.now(.awake, init.io);
+    // var prev_ = Clock.now(.awake, init.io);
     while (!window.shouldClose()) {
         // const curr_time = Clock.now(.awake, init.io);
         // const elapsed = prev_time.durationTo(curr_time);
@@ -64,16 +77,37 @@ pub fn main(init: std.process.Init) !void {
 
         var mousePos: [2]f64 = @splat(0.0);
         glfw.getCursorPos(window, &mousePos[0], &mousePos[1]);
-        const mousePixelPos: math.f32x2 = .{ @floatCast(mousePos[0]), @floatCast(-mousePos[1]) };
+        const mousePixelPos: math.f32x2 = .{ @floatCast(mousePos[0]), @floatCast(height-mousePos[1]) };
 
         if(glfw.getMouseButton(window, glfw.MouseButton.left) == glfw.Action.press) {
-            const newPoints = boxPoints(math.scale(mousePixelPos, 240.0/@as(f32, @floatFromInt(height))), .{16, 16});
+            sweptPos = math.scale(mousePixelPos, 240.0/@as(f32, @floatFromInt(height)));
+            sweep = math.sub(finalPos, sweptPos);
+            sweptBox = boxCollider(sweptPos, sweptBoxSize);
+            const newPoints = boxPoints(sweptPos, sweptBoxSize);
             @memcpy(points[0..4], &newPoints);
+            state_dirty = true;
         }
         if(glfw.getMouseButton(window, glfw.MouseButton.right) == glfw.Action.press) {
-            const newPoints = boxPoints(math.scale(mousePixelPos, 240.0/@as(f32, @floatFromInt(height))), .{16, 16});
+            finalPos = math.scale(mousePixelPos, 240.0/@as(f32, @floatFromInt(height)));
+            sweep = math.sub(finalPos, sweptPos);
+            const newPoints = boxPoints(finalPos, sweptBoxSize);
             @memcpy(points[4..8], &newPoints);
+            state_dirty = true;
         }
+
+        if(state_dirty) {
+            const start_time = Clock.now(.awake, init.io);
+            t = collision2d.find_collision_time(sweptBox, sweep, staticBox, 1e-4, collision2d.swept_box_collision);
+            normal = collision2d.swept_box_collision_normal(sweptBox, sweep, staticBox);
+            const end_time = Clock.now(.awake, init.io);
+            std.log.debug("Time: {d}ns\n", .{start_time.durationTo(end_time).toNanoseconds()});
+        }
+        state_dirty = false;
+        const newPoints = boxPoints(math.add(sweptPos, math.scale(sweep, t)), sweptBoxSize);
+        @memcpy(points[8..12], &newPoints);
+
+        points[16] = math.add(sweptPos, math.scale(sweptBoxSize, 0.5)); 
+        points[17] = math.add(points[16], math.scale(normal, 10));
         
         gl.namedBufferData(vbo, @sizeOf(@TypeOf(points)), &points, gl.DYNAMIC_DRAW);
         gl.viewport(0, 0, width, height);
@@ -90,6 +124,12 @@ pub fn main(init: std.process.Init) !void {
         gl.drawArrays(gl.LINE_LOOP, 0, 4);
         gl.uniform3f(color_loc, 1.0, 0.2, 0.2);
         gl.drawArrays(gl.LINE_LOOP, 4, 4);
+        gl.uniform3f(color_loc, 0.2, 1.0, 0.2);
+        gl.drawArrays(gl.LINE_LOOP, 8, 4);
+        gl.uniform3f(color_loc, 0.5, 0.5, 0.5);
+        gl.drawArrays(gl.LINE_LOOP, 12, 4);
+        gl.uniform3f(color_loc, 1, 0.75, 0);
+        gl.drawArrays(gl.LINE_LOOP, 16, 2);
 
         window.swapBuffers();
         glfw.pollEvents();
@@ -104,3 +144,6 @@ fn boxPoints(pos: math.f32x2, size: math.f32x2) [4]math.f32x2 {
     return output;
 }
 
+fn boxCollider(pos: math.f32x2, size: math.f32x2) collision2d.Box {
+    return collision2d.Box { .lessPos = pos, .greaterPos = math.add(pos, size) };
+}

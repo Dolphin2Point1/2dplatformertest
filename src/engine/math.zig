@@ -111,7 +111,7 @@ pub inline fn dot(v0: anytype, v1: @TypeOf(v0)) vectorBaseType(@TypeOf(v0)) {
 }
 
 pub inline fn cross2(v0: f32x2, v1: f32x2) f32 {
-    return reduceAdd(dot(v0, rotate2D90DegCW(v1)));
+    return dot(v0, rotate2D90DegCW(v1));
 }
 
 pub inline fn sqrLength(v: anytype) vectorBaseType(@TypeOf(v)) {
